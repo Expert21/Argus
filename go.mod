@@ -2,7 +2,10 @@ module github.com/Expert21/argus
 
 go 1.25.6
 
-require github.com/charmbracelet/bubbletea v1.3.10
+require (
+	github.com/charmbracelet/bubbletea v1.3.10
+	github.com/fsnotify/fsnotify v1.9.0
+)
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
