@@ -1,0 +1,109 @@
+Project Argus: Local Linux SIEM & Log Viewer
+
+Concept: A lightweight, terminal-based User Interface (TUI) to unify, visualize, and monitor system logs on Linux. Goal: Bridge the gap between binary logs (journalctl) and text logs (/var/log) in a single, read-only dashboard. Target OS: Arch Linux (Primary), Linux General.
+1. The Tech Stack
+
+    Language: Python 3.10+
+
+    UI Framework: Textual (Modern TUI with CSS-like styling and mouse support).
+
+    Data Sources:
+
+        systemd-journald (via journalctl -o json -f)
+
+        Flat files (via Python watchdog or aiofiles)
+
+    Architecture: Asyncio-driven event loop.
+
+2. Core Architecture
+A. The Backend (Ingestors)
+
+    Journal Ingestor: Spawns a subprocess: journalctl -o json -f. Parses JSON output line-by-line.
+
+    File Ingestor: Uses watchdog to monitor specific text files (e.g., /var/log/auth.log) for modifications and reads new lines.
+
+    The Aggregator: A central Python Queue that receives logs from all sources, formats them into a unified dictionary (Timestamp, Source, Message, Level), and pushes them to the UI.
+
+B. The Frontend (Textual TUI)
+
+    Layout:
+
+        Left Sidebar: Tree view of log sources (e.g., System, Kernel, Auth, Apache).
+
+        Main View: LogWindow widget. Auto-scrolling text area with regex-based coloring.
+
+        Footer: Status bar showing total events, active filters, and command hints.
+
+C. Security Features
+
+    Read-Only: The application explicitly forbids file writing or shell escape sequences.
+
+    Highlighting: Auto-color keywords like Error, Warning, Sudo, Segfault.
+
+3. The Security & Permissions Model
+
+Strategy: Role-Based Access Control via Sudoers (Method 1)
+
+Goal: Allow running the tool with Root privileges without typing a password, while preventing privilege escalation.
+Step 1: Group Creation
+
+Create a dedicated group for users allowed to audit logs.
+```Bash
+
+sudo groupadd argus-users
+sudo usermod -aG argus-users $USER
+# Logout/Login required
+```
+Step 2: The Secure Wrapper
+
+A script owned by root that launches the application. This prevents users from modifying the script to run malicious code as root.
+
+File: /usr/local/bin/argus
+```Bash
+
+#!/bin/bash
+# Hardcoded path to the production virtualenv
+/opt/argus/venv/bin/python /opt/argus/src/main.py "$@"
+```
+    Permissions: chmod 755, Owner: root:root.
+
+Step 3: Sudoers Rule
+
+Allow the group to run only the wrapper script without a password.
+
+File: /etc/sudoers.d/argus
+```Bash
+
+%argus-users ALL=(ALL) NOPASSWD: /usr/local/bin/argus
+```
+
+4. Development Workflow
+Phase 1: Local Development
+
+    Location: ~/projects/argus
+
+    Execution: Run manually using sudo python main.py (requires password).
+
+    Focus: UI Layout, journalctl parsing logic, syntax highlighting regex.
+
+Phase 2: Deployment / Testing "Prod"
+
+    Location: /opt/argus (Owned by root).
+
+    Deployment: Copy source code to /opt.
+
+    Execution: Run via sudo argus (No password required).
+
+5. V1 MVP Roadmap
+
+    [ ] Setup: Initialize Python venv and install textual.
+
+    [ ] Prototype: Create a script that prints journalctl JSON stream to console (proof of concept).
+
+    [ ] UI Shell: Build the empty Textual app with Sidebar and Main Window.
+
+    [ ] Wiring: Connect the journalctl stream to the Textual write() method.
+
+    [ ] Filtering: Add basic Regex formatting (Color ERROR red).
+
+    [ ] Permissions: Implement the argus-users group and sudoers rule.

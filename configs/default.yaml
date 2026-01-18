@@ -1,0 +1,73 @@
+# Argus Default Configuration
+# ============================
+# Copy this to ~/.config/argus/config.yaml and customize
+
+general:
+  # Maximum number of log entries to keep in memory
+  max_buffer: 10000
+  
+  # Timestamp format (Go time format - see: https://pkg.go.dev/time#pkg-constants)
+  # "2006-01-02 15:04:05" is the Go reference time (Jan 2, 2006 at 3:04:05 PM)
+  timestamp_format: "2006-01-02 15:04:05"
+  
+  # Auto-scroll to new entries
+  scroll_on_new: true
+
+# Log sources to monitor
+sources:
+  # The systemd journal - captures most system logs
+  - name: "System Journal"
+    type: journald
+    enabled: true
+    # Optional: filter by priority (0=emergency, 7=debug)
+    # priority: 4  # warning and above
+    
+  # Authentication log - SSH, sudo, login attempts
+  - name: "Auth Log"
+    type: file
+    path: "/var/log/auth.log"
+    enabled: true
+    
+  # Alternative auth log location (Arch Linux uses journal primarily)
+  # - name: "Secure Log"
+  #   type: file
+  #   path: "/var/log/secure"
+  #   enabled: false
+
+# Syntax highlighting rules
+highlight_rules:
+  # Critical keywords - bright red, bold
+  - pattern: "\\b(ERROR|CRITICAL|FATAL|PANIC)\\b"
+    style: "bold red"
+    
+  # Warnings - yellow
+  - pattern: "\\b(WARN|WARNING)\\b"
+    style: "yellow"
+    
+  # Info - blue
+  - pattern: "\\b(INFO)\\b"
+    style: "blue"
+    
+  # Debug - dim
+  - pattern: "\\b(DEBUG|TRACE)\\b"
+    style: "dim"
+    
+  # Security-relevant keywords
+  - pattern: "\\b(sudo|su|login|session|authentication)\\b"
+    style: "magenta"
+    
+  # Failure indicators
+  - pattern: "\\b(failed|failure|denied|refused|rejected|invalid)\\b"
+    style: "bold red"
+    
+  # Success indicators  
+  - pattern: "\\b(success|accepted|allowed|started|loaded)\\b"
+    style: "green"
+    
+  # IP addresses
+  - pattern: "\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}"
+    style: "cyan"
+    
+  # Segfaults - very important!
+  - pattern: "\\bsegfault\\b"
+    style: "bold red blink"

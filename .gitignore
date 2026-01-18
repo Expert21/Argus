@@ -1,0 +1,36 @@
+# Argus Build Artifacts
+argus
+build/
+
+# Go generated
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config (don't commit user's config)
+# The default is fine to commit
+~/.config/argus/
+
+# Temp files
+*.tmp
+*.log
