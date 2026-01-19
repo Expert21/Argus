@@ -250,13 +250,14 @@ func (f *FileIngestor) handleRotation(ctx context.Context, entries chan<- LogEnt
 // It tries common log formats (syslog, timestamp-based, etc.)
 func (f *FileIngestor) parseLine(line string) LogEntry {
 	entry := LogEntry{
-		Source:     f.config.Name,
-		SourceType: SourceFile,
-		Raw:        line,
-		Message:    line, // Default: whole line is the message
-		Timestamp:  time.Now(),
-		Level:      LevelUnknown,
-		Metadata:   make(map[string]string),
+		Source:       f.config.Name,
+		IngestorName: f.config.Name, // Config name for filtering
+		SourceType:   SourceFile,
+		Raw:          line,
+		Message:      line, // Default: whole line is the message
+		Timestamp:    time.Now(),
+		Level:        LevelUnknown,
+		Metadata:     make(map[string]string),
 	}
 
 	// Try to parse syslog format

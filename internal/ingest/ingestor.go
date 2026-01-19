@@ -132,8 +132,12 @@ type LogEntry struct {
 	// Timestamp when the log entry was created
 	Timestamp time.Time `json:"timestamp"`
 
-	// Source identifies where this entry came from (e.g., "journald", "auth.log")
+	// Source identifies the specific source (e.g., "systemd", "kernel", "sshd")
 	Source string `json:"source"`
+
+	// IngestorName is the config name of the ingestor (e.g., "System Journal")
+	// This is used for filtering by source in the UI
+	IngestorName string `json:"ingestor_name"`
 
 	// SourceType indicates the type of source (journald, file, etc.)
 	SourceType SourceType `json:"source_type"`
@@ -157,13 +161,6 @@ type LogEntry struct {
 	Raw string `json:"raw,omitempty"`
 
 	// Metadata holds any extra fields from the source
-	// GO SYNTAX LESSON #15: Maps
-	// ==========================
-	// map[KeyType]ValueType is Go's dictionary/hashmap.
-	// - Make with make(map[string]string) or literal map[string]string{}
-	// - Access: value := m["key"]
-	// - Check existence: value, ok := m["key"]
-	// - Delete: delete(m, "key")
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 

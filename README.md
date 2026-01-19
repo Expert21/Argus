@@ -5,64 +5,84 @@ A lightweight, efficient, terminal-based log viewer for Linux. Built in Go for m
 ## Features
 
 - **Unified View** — Monitor journalctl and text logs in a single TUI
-- **Dynamic Sources** — Add/remove log sources at runtime
+- **Live Streaming** — Real-time log updates with auto-scroll
+- **Source Filtering** — Filter by log source (journal, files)
 - **Syntax Highlighting** — Color-coded log levels and keywords
-- **Efficient** — ~5-10MB memory footprint, single static binary
+- **Efficient** — ~3.5MB binary, minimal memory footprint
 - **Security-First** — Read-only design, proper privilege separation
-
-## Requirements
-
-- Linux (primary target: Arch Linux)
-- Go 1.21+ (for building)
-- Systemd (for journalctl integration)
 
 ## Quick Start
 
 ```bash
-# Clone the repository
+# Clone and build
 git clone https://github.com/Expert21/argus.git
 cd argus
-
-# Build
 make build
 
-# Run (basic mode - may not read all logs)
+# Run (may need sudo for full log access)
 ./argus
-
-# Run with privileges (for full log access)
 sudo ./argus
 ```
 
-## Installation (Production)
+## Installation
 
-For production use with proper privilege separation:
-
+### Quick Install (Personal Use)
 ```bash
-# Build release binary
-make release
+make install-quick
+```
 
-# Install binary and wrapper (requires sudo)
+### Full Install (Production, with Security Features)
+```bash
 sudo make install
-
-# Create argus-users group
-sudo groupadd argus-users
 sudo usermod -aG argus-users $USER
+# Log out and back in
+sudo argus  # No password needed!
+```
 
-# Add sudoers rule
-echo '%argus-users ALL=(ALL) NOPASSWD: /usr/local/bin/argus' | sudo tee /etc/sudoers.d/argus
-
-# Log out and back in, then run:
-sudo argus
+### Uninstall
+```bash
+sudo make uninstall
 ```
 
 ## Keybindings
 
 | Key | Action |
 |-----|--------|
-| `q` / `Esc` | Quit |
-| `Space` | Simulate log event (demo) |
-| `/` | Search (coming soon) |
-| `a` | Add source (coming soon) |
+| `q` / `Ctrl+C` | Quit |
+| `Tab` | Switch focus (sidebar ↔ logs) |
+| `j/k` or `↑/↓` | Navigate / Scroll |
+| `Enter` | Select source filter |
+| `p` / `Space` | Pause / Resume |
+| `c` | Clear log view |
+| `g` / `G` | Go to top / bottom |
+| `r` | Reload config |
+| `?` | Show help |
+
+## Configuration
+
+Config file location: `~/.config/argus/config.yaml`
+
+```bash
+# Install user config
+make install-config
+```
+
+Example config:
+```yaml
+general:
+  max_buffer: 10000
+  timestamp_format: "2006-01-02 15:04:05"
+
+sources:
+  - name: "System Journal"
+    type: journald
+    enabled: true
+    
+  - name: "Auth Log"
+    type: file
+    path: "/var/log/auth.log"
+    enabled: true
+```
 
 ## Project Structure
 
@@ -70,51 +90,38 @@ sudo argus
 argus/
 ├── cmd/argus/         # Entry point
 ├── internal/
-│   ├── config/        # Configuration management
+│   ├── aggregate/     # Event aggregation, ring buffer
+│   ├── config/        # Configuration loading
 │   ├── ingest/        # Log source ingestors
-│   ├── aggregate/     # Event aggregation
-│   ├── filter/        # Log filtering
-│   ├── format/        # Syntax highlighting
-│   └── tui/           # TUI components
+│   └── tui/           # TUI components (Bubbletea/Lipgloss)
 ├── configs/           # Default configuration
-├── scripts/           # Deployment scripts
+├── scripts/           # Installation scripts
 └── Makefile
 ```
 
-## Configuration
-
-Copy the default config to your home directory:
-
-```bash
-mkdir -p ~/.config/argus
-cp configs/default.yaml ~/.config/argus/config.yaml
-```
-
-See [configs/default.yaml](configs/default.yaml) for all options.
-
 ## Security Model
 
-Argus uses a privilege separation model:
+Argus uses a privilege separation model for security:
 
-1. **Read-Only** — The application never writes to log files
-2. **Secure Wrapper** — A root-owned wrapper script is the only sudoable entry point
-3. **Group-Based Access** — Only members of `argus-users` can run with privileges
-4. **Auditable** — All code paths are auditable; no shell escapes
+1. **Read-Only** — Never writes to log files or executes commands
+2. **Secure Wrapper** — Root-owned script validates binary integrity
+3. **Group-Based Access** — `argus-users` group for passwordless sudo
+4. **Minimal Privileges** — Requests only read access to logs
+
+### Security Files
+- `/usr/local/bin/argus` — Wrapper script (root-owned)
+- `/usr/local/bin/argus-bin` — Actual binary (root-owned)
+- `/etc/sudoers.d/argus` — Sudoers rule
 
 ## Development
 
 ```bash
-# Format code
-make fmt
-
-# Run tests
-make test
-
-# Run with race detector
-make test-race
-
-# Clean build artifacts
-make clean
+make build       # Development build
+make release     # Optimized release build
+make test        # Run tests
+make fmt         # Format code
+make clean       # Clean artifacts
+make help        # Show all targets
 ```
 
 ## License

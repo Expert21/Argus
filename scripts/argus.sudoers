@@ -1,0 +1,17 @@
+# Argus sudoers configuration
+# ============================
+# This file grants members of the 'argus-users' group the ability to run
+# the Argus log viewer without entering a password.
+#
+# INSTALLATION:
+#   sudo cp scripts/argus.sudoers /etc/sudoers.d/argus
+#   sudo chmod 440 /etc/sudoers.d/argus
+#   sudo visudo -c  # Verify syntax
+#
+# SECURITY NOTES:
+# - Only the wrapper script is allowed, not the binary directly
+# - The wrapper script verifies the binary is owned by root
+# - Users cannot inject arguments that would compromise security
+
+# Allow argus-users group to run the wrapper script without password
+%argus-users ALL=(ALL) NOPASSWD: /usr/local/bin/argus

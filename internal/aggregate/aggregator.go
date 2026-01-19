@@ -9,6 +9,7 @@ package aggregate
 
 import (
 	"context"
+	"sort"
 	"sync"
 
 	"github.com/Expert21/argus/internal/ingest"
@@ -285,7 +286,7 @@ func (a *Aggregator) Unsubscribe(id string) {
 	}
 }
 
-// GetSources returns a list of source names.
+// GetSources returns a sorted list of source names (stable order).
 func (a *Aggregator) GetSources() []string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -294,6 +295,8 @@ func (a *Aggregator) GetSources() []string {
 	for name := range a.sources {
 		names = append(names, name)
 	}
+	// Sort for stable order in UI
+	sort.Strings(names)
 	return names
 }
 

@@ -266,15 +266,16 @@ func (j *JournalIngestor) parseJournalEntry(line string) (LogEntry, error) {
 	}
 
 	return LogEntry{
-		Timestamp:  ts,
-		Source:     source,
-		SourceType: SourceJournald,
-		Level:      level,
-		Message:    je.Message,
-		Unit:       je.SystemdUnit,
-		Hostname:   je.Hostname,
-		PID:        parseInt(je.PID),
-		Raw:        line,
+		Timestamp:    ts,
+		Source:       source,
+		IngestorName: j.config.Name, // Config name for filtering
+		SourceType:   SourceJournald,
+		Level:        level,
+		Message:      je.Message,
+		Unit:         je.SystemdUnit,
+		Hostname:     je.Hostname,
+		PID:          parseInt(je.PID),
+		Raw:          line,
 		Metadata: map[string]string{
 			"transport": je.Transport,
 		},
