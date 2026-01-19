@@ -6,47 +6,138 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Expert21/argus/internal/config"
 	"github.com/Expert21/argus/internal/ingest"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// LogFormatter handles the styling and formatting of log entries.
-//
-// GO SYNTAX LESSON #42: Syntax Highlighting with Regex
-// =====================================================
-// We use compiled regexes to find and highlight keywords.
-// Each keyword match is wrapped with ANSI escape codes via Lipgloss.
-// The order of highlighting matters - more specific patterns first.
+// Formatter handles log entry formatting with configurable options.
+type Formatter struct {
+	// TimestampFormat from config (Go time format)
+	TimestampFormat string
 
-// Regex patterns for syntax highlighting
-var (
-	// Error keywords
-	errorPattern = regexp.MustCompile(`(?i)\b(error|err|fail|failed|failure|denied|refused|rejected|invalid|timeout|exception)\b`)
+	// HighlightRules from config
+	highlightRules []highlightRule
+}
 
-	// Success keywords
-	successPattern = regexp.MustCompile(`(?i)\b(success|succeeded|ok|done|started|loaded|accepted|allowed|connected|established)\b`)
+// highlightRule pairs a compiled regex with a style
+type highlightRule struct {
+	pattern *regexp.Regexp
+	style   lipgloss.Style
+}
 
-	// Security keywords
-	securityPattern = regexp.MustCompile(`(?i)\b(sudo|root|authentication|login|logout|session|permission|denied|ssh|password|auth|pam)\b`)
+// Default patterns (used if no config rules provided)
+var defaultPatterns = []struct {
+	pattern string
+	style   lipgloss.Style
+}{
+	{`(?i)\b(error|err|fail|failed|failure|denied|refused|rejected|invalid|timeout|exception)\b`, KeywordErrorStyle},
+	{`(?i)\b(success|succeeded|ok|done|started|loaded|accepted|allowed|connected|established)\b`, KeywordSuccessStyle},
+	{`(?i)\b(sudo|root|authentication|login|logout|session|permission|ssh|password|auth|pam)\b`, KeywordSecurityStyle},
+	{`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`, KeywordIPStyle},
+}
 
-	// IP addresses
-	ipPattern = regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)
+// NewFormatter creates a formatter with the given configuration.
+func NewFormatter(cfg *config.Config) *Formatter {
+	f := &Formatter{
+		TimestampFormat: "15:04:05", // Default short format for display
+	}
 
-	// UUIDs
-	uuidPattern = regexp.MustCompile(`[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}`)
+	// Use config timestamp format if provided
+	if cfg != nil && cfg.General.TimestampFormat != "" {
+		// For display, use a shorter format derived from config
+		// Config might have "2006-01-02 15:04:05", we just want time portion
+		f.TimestampFormat = extractTimeFormat(cfg.General.TimestampFormat)
+	}
 
-	// Paths
-	pathPattern = regexp.MustCompile(`/[\w./\-_]+`)
-)
+	// Build highlight rules from config
+	if cfg != nil && len(cfg.Highlight) > 0 {
+		for _, rule := range cfg.Highlight {
+			compiled, err := regexp.Compile(rule.Pattern)
+			if err != nil {
+				continue // Skip invalid patterns
+			}
+			style := parseStyle(rule.Style)
+			f.highlightRules = append(f.highlightRules, highlightRule{
+				pattern: compiled,
+				style:   style,
+			})
+		}
+	}
 
-// FormatLogEntry formats a single log entry with full styling.
-func FormatLogEntry(entry ingest.LogEntry, maxWidth int) string {
+	// Add default patterns if no config rules
+	if len(f.highlightRules) == 0 {
+		for _, dp := range defaultPatterns {
+			compiled, _ := regexp.Compile(dp.pattern)
+			f.highlightRules = append(f.highlightRules, highlightRule{
+				pattern: compiled,
+				style:   dp.style,
+			})
+		}
+	}
+
+	return f
+}
+
+// extractTimeFormat extracts just the time portion from a full timestamp format.
+func extractTimeFormat(fullFormat string) string {
+	// If it contains date components, try to extract just time
+	// Go reference: "2006-01-02 15:04:05"
+	if strings.Contains(fullFormat, "15:04:05") {
+		return "15:04:05"
+	}
+	if strings.Contains(fullFormat, "15:04") {
+		return "15:04:05"
+	}
+	// Otherwise return as-is (might be custom)
+	return fullFormat
+}
+
+// parseStyle converts a style string like "bold red" to a lipgloss.Style.
+func parseStyle(styleStr string) lipgloss.Style {
+	style := lipgloss.NewStyle()
+	parts := strings.Fields(strings.ToLower(styleStr))
+
+	for _, part := range parts {
+		switch part {
+		case "bold":
+			style = style.Bold(true)
+		case "dim":
+			style = style.Faint(true)
+		case "italic":
+			style = style.Italic(true)
+		case "underline":
+			style = style.Underline(true)
+		case "red":
+			style = style.Foreground(ColorError)
+		case "green":
+			style = style.Foreground(ColorSuccess)
+		case "yellow":
+			style = style.Foreground(ColorWarning)
+		case "blue":
+			style = style.Foreground(ColorInfo)
+		case "magenta":
+			style = style.Foreground(ColorAccent)
+		case "cyan":
+			style = style.Foreground(lipgloss.Color("#79c0ff"))
+		case "white":
+			style = style.Foreground(ColorForeground)
+		case "gray", "grey":
+			style = style.Foreground(ColorSecondary)
+		}
+	}
+
+	return style
+}
+
+// FormatEntry formats a log entry for display.
+func (f *Formatter) FormatEntry(entry ingest.LogEntry, maxWidth int) string {
 	if maxWidth <= 0 {
 		maxWidth = 80
 	}
 
 	// Timestamp
-	ts := TimestampStyle.Render(entry.Timestamp.Format("15:04:05"))
+	ts := TimestampStyle.Render(entry.Timestamp.Format(f.TimestampFormat))
 
 	// Level with color
 	levelStr := LevelStyle(entry.Level.String()).Render(entry.Level.String())
@@ -56,64 +147,60 @@ func FormatLogEntry(entry ingest.LogEntry, maxWidth int) string {
 	sourceStr := SourceNameStyle.Render(source)
 
 	// Message with syntax highlighting
-	msgWidth := maxWidth - 40 // Account for timestamp, level, source, spacing
+	msgWidth := maxWidth - 40
 	if msgWidth < 20 {
 		msgWidth = 20
 	}
 	msg := truncateStr(entry.Message, msgWidth)
-	msg = highlightMessage(msg)
+	msg = f.highlightMessage(msg)
 
 	return fmt.Sprintf("%s │ %s │ %s │ %s", ts, levelStr, sourceStr, msg)
 }
 
-// FormatLogEntryCompact formats a log entry in compact mode (no source).
+// highlightMessage applies configured syntax highlighting.
+func (f *Formatter) highlightMessage(msg string) string {
+	for _, rule := range f.highlightRules {
+		msg = rule.pattern.ReplaceAllStringFunc(msg, func(match string) string {
+			return rule.style.Render(match)
+		})
+	}
+	return msg
+}
+
+// ============================================================================
+// Package-level functions for backward compatibility
+// ============================================================================
+
+// Default formatter instance (used when no config is available)
+var defaultFormatter = NewFormatter(nil)
+
+// SetDefaultFormatter updates the default formatter with new config.
+func SetDefaultFormatter(cfg *config.Config) {
+	defaultFormatter = NewFormatter(cfg)
+}
+
+// FormatLogEntry formats a log entry using the default formatter.
+func FormatLogEntry(entry ingest.LogEntry, maxWidth int) string {
+	return defaultFormatter.FormatEntry(entry, maxWidth)
+}
+
+// FormatLogEntryCompact formats a log entry in compact mode.
 func FormatLogEntryCompact(entry ingest.LogEntry, maxWidth int) string {
 	if maxWidth <= 0 {
 		maxWidth = 80
 	}
 
-	// Timestamp
-	ts := TimestampStyle.Render(entry.Timestamp.Format("15:04:05"))
-
-	// Level with color
+	ts := TimestampStyle.Render(entry.Timestamp.Format(defaultFormatter.TimestampFormat))
 	levelStr := LevelStyle(entry.Level.String()).Render(entry.Level.String())
 
-	// Message
 	msgWidth := maxWidth - 20
 	if msgWidth < 20 {
 		msgWidth = 20
 	}
 	msg := truncateStr(entry.Message, msgWidth)
-	msg = highlightMessage(msg)
+	msg = defaultFormatter.highlightMessage(msg)
 
 	return fmt.Sprintf("%s %s %s", ts, levelStr, msg)
-}
-
-// highlightMessage applies syntax highlighting to a message.
-func highlightMessage(msg string) string {
-	// Apply highlighting in order of specificity
-
-	// Highlight IPs
-	msg = ipPattern.ReplaceAllStringFunc(msg, func(match string) string {
-		return KeywordIPStyle.Render(match)
-	})
-
-	// Highlight errors
-	msg = errorPattern.ReplaceAllStringFunc(msg, func(match string) string {
-		return KeywordErrorStyle.Render(match)
-	})
-
-	// Highlight success
-	msg = successPattern.ReplaceAllStringFunc(msg, func(match string) string {
-		return KeywordSuccessStyle.Render(match)
-	})
-
-	// Highlight security
-	msg = securityPattern.ReplaceAllStringFunc(msg, func(match string) string {
-		return KeywordSecurityStyle.Render(match)
-	})
-
-	return msg
 }
 
 // truncateStr truncates a string to maxLen, adding ellipsis if needed.
@@ -140,6 +227,10 @@ func truncateOrPad(s string, length int) string {
 	}
 	return s + strings.Repeat(" ", length-len(s))
 }
+
+// ============================================================================
+// StatusBar
+// ============================================================================
 
 // StatusBar renders the status bar at the bottom.
 type StatusBar struct {
@@ -172,7 +263,6 @@ func (sb *StatusBar) SetWidth(width int) {
 
 // View renders the status bar.
 func (sb *StatusBar) View() string {
-	// Left side: status indicator
 	var statusIndicator string
 	if sb.paused {
 		statusIndicator = StatusPausedStyle.Render("⏸ PAUSED")
@@ -180,22 +270,17 @@ func (sb *StatusBar) View() string {
 		statusIndicator = StatusLiveStyle.Render("● LIVE")
 	}
 
-	// Center: message
 	message := StatusTextStyle.Render(sb.status)
 
-	// Right side: stats
 	stats := lipgloss.NewStyle().
 		Foreground(ColorSecondary).
 		Render(fmt.Sprintf("Events: %d │ Sources: %d", sb.eventCount, sb.sourceCount))
 
-	// Help text
-	help := HelpStyle.Render("[q]uit [p]ause [c]lear [/]search [Tab]focus")
+	help := HelpStyle.Render("[q]uit [p]ause [c]lear [Tab]focus [?]help")
 
-	// Build the bar
 	left := fmt.Sprintf("%s  %s", statusIndicator, message)
 	right := fmt.Sprintf("%s  │  %s", stats, help)
 
-	// Calculate spacing
 	spacing := sb.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if spacing < 0 {
 		spacing = 0
