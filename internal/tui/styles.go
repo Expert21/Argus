@@ -179,3 +179,25 @@ var (
 	KeywordIPStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#79c0ff"))
 )
+
+// LogDetailStyle is for the log detail panel
+var LogDetailStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(ColorBorder).
+	Padding(1, 2)
+
+// LogDetailFocusedStyle is log detail panel when focused
+var LogDetailFocusedStyle = LogDetailStyle.Copy().
+	BorderForeground(ColorBorderFocus)
+
+// LogEntrySelectedStyle is for the currently selected log entry
+var LogEntrySelectedStyle = lipgloss.NewStyle().
+	Background(lipgloss.Color("#1f2937")).
+	Foreground(ColorForeground).
+	Bold(true)
+
+// Scrollbar characters
+const (
+	ScrollbarTrack = "░"
+	ScrollbarThumb = "▇"
+)

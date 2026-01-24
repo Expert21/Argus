@@ -18,6 +18,12 @@ type LogView struct {
 	// entries holds all log entries
 	entries []ingest.LogEntry
 
+	// filteredEntries holds entries after filtering (for selection indexing)
+	filteredEntries []ingest.LogEntry
+
+	// selectedIndex is the currently selected entry in filteredEntries
+	selectedIndex int
+
 	// width and height of the view
 	width, height int
 
@@ -43,11 +49,13 @@ func NewLogView() *LogView {
 	vp.Style = lipgloss.NewStyle()
 
 	return &LogView{
-		viewport:     vp,
-		entries:      make([]ingest.LogEntry, 0),
-		autoScroll:   true,
-		maxEntries:   1000,
-		sourceFilter: "",
+		viewport:        vp,
+		entries:         make([]ingest.LogEntry, 0),
+		filteredEntries: make([]ingest.LogEntry, 0),
+		selectedIndex:   0,
+		autoScroll:      true,
+		maxEntries:      1000,
+		sourceFilter:    "",
 	}
 }
 
@@ -83,12 +91,12 @@ func (lv *LogView) AddEntry(entry ingest.LogEntry) {
 		lv.entries = lv.entries[len(lv.entries)-lv.maxEntries:]
 	}
 
-	lv.updateContent()
-
-	// Auto-scroll to bottom if enabled
+	// Auto-select newest entry if auto-scroll enabled
 	if lv.autoScroll {
-		lv.viewport.GotoBottom()
+		lv.selectedIndex = lv.filteredCount // Will be clamped in updateContent
 	}
+
+	lv.updateContent()
 }
 
 // Clear removes all entries.
@@ -99,26 +107,87 @@ func (lv *LogView) Clear() {
 
 // updateContent rebuilds the viewport content with filtering.
 func (lv *LogView) updateContent() {
-	var lines []string
-	contentWidth := lv.width - 6
+	lv.filteredEntries = make([]ingest.LogEntry, 0)
+	contentWidth := lv.width - 8 // Account for borders and scrollbar
 
-	lv.filteredCount = 0
+	// Build filtered entries list
 	for _, entry := range lv.entries {
 		// Apply source filter (matches on IngestorName, not Source)
 		if lv.sourceFilter != "" && entry.IngestorName != lv.sourceFilter {
 			continue
 		}
+		lv.filteredEntries = append(lv.filteredEntries, entry)
+	}
+	lv.filteredCount = len(lv.filteredEntries)
 
-		line := FormatLogEntry(entry, contentWidth)
+	// Clamp selected index
+	if lv.selectedIndex >= lv.filteredCount {
+		lv.selectedIndex = lv.filteredCount - 1
+	}
+	if lv.selectedIndex < 0 {
+		lv.selectedIndex = 0
+	}
+
+	// Build display lines
+	var lines []string
+	for i, entry := range lv.filteredEntries {
+		line := lv.formatEntryCompact(entry, contentWidth)
+		if i == lv.selectedIndex {
+			// Highlight selected entry
+			line = LogEntrySelectedStyle.Width(contentWidth).Render(line)
+		}
 		lines = append(lines, line)
-		lv.filteredCount++
 	}
 
 	lv.viewport.SetContent(strings.Join(lines, "\n"))
+
+	// Ensure selected entry is visible
+	lv.ensureSelectedVisible()
+}
+
+// formatEntryCompact formats an entry for the compact log list view.
+func (lv *LogView) formatEntryCompact(entry ingest.LogEntry, maxWidth int) string {
+	ts := TimestampStyle.Render(entry.Timestamp.Format("15:04:05"))
+	levelStr := LevelStyle(entry.Level.String()).Render(entry.Level.String())
+	source := truncateOrPad(entry.Source, 12)
+	sourceStr := SourceNameStyle.Render(source)
+
+	// Calculate remaining width for message
+	msgWidth := maxWidth - 40
+	if msgWidth < 20 {
+		msgWidth = 20
+	}
+	msg := truncateStr(entry.Message, msgWidth)
+
+	return fmt.Sprintf("%s  %s  %s  %s", ts, levelStr, sourceStr, msg)
+}
+
+// ensureSelectedVisible scrolls viewport to keep selection visible.
+func (lv *LogView) ensureSelectedVisible() {
+	if lv.filteredCount == 0 {
+		return
+	}
+
+	visibleLines := lv.viewport.Height
+	currentTop := lv.viewport.YOffset
+
+	// If selected is above visible area, scroll up
+	if lv.selectedIndex < currentTop {
+		lv.viewport.SetYOffset(lv.selectedIndex)
+	}
+	// If selected is below visible area, scroll down
+	if lv.selectedIndex >= currentTop+visibleLines {
+		lv.viewport.SetYOffset(lv.selectedIndex - visibleLines + 1)
+	}
 }
 
 // View renders the log view.
 func (lv *LogView) View() string {
+	// Hide if width is too small
+	if lv.width <= 0 {
+		return ""
+	}
+
 	// Header with filter info
 	var headerText string
 	if lv.sourceFilter == "" {
@@ -166,7 +235,10 @@ func (lv *LogView) View() string {
 			Italic(true).
 			Render(fmt.Sprintf("\n  No entries from source: %s\n\n  Select 'All Sources' or wait for new events.\n", lv.sourceFilter))
 	} else {
-		content = lv.viewport.View()
+		// Combine viewport with scrollbar
+		viewportContent := lv.viewport.View()
+		scrollbar := lv.renderScrollbar()
+		content = lipgloss.JoinHorizontal(lipgloss.Top, viewportContent, scrollbar)
 	}
 
 	// Combine header and content
@@ -197,52 +269,121 @@ func (lv *LogView) scrollIndicator() string {
 	return fmt.Sprintf("%d%%", percent)
 }
 
-// ScrollUp scrolls the viewport up.
-func (lv *LogView) ScrollUp(lines int) {
-	lv.autoScroll = false
-	lv.viewport.LineUp(lines)
+// SelectUp moves selection up by one entry.
+func (lv *LogView) SelectUp() {
+	if lv.selectedIndex > 0 {
+		lv.selectedIndex--
+		lv.autoScroll = false
+		lv.updateContent()
+	}
 }
 
-// ScrollDown scrolls the viewport down.
-func (lv *LogView) ScrollDown(lines int) {
-	lv.viewport.LineDown(lines)
-	if lv.viewport.AtBottom() {
+// SelectDown moves selection down by one entry.
+func (lv *LogView) SelectDown() {
+	if lv.selectedIndex < lv.filteredCount-1 {
+		lv.selectedIndex++
+		lv.updateContent()
+	}
+	if lv.selectedIndex == lv.filteredCount-1 {
 		lv.autoScroll = true
 	}
 }
 
-// PageUp scrolls up one page.
+// PageUp moves selection up by one page.
 func (lv *LogView) PageUp() {
 	lv.autoScroll = false
-	lv.viewport.ViewUp()
+	pageSize := lv.viewport.Height
+	lv.selectedIndex -= pageSize
+	if lv.selectedIndex < 0 {
+		lv.selectedIndex = 0
+	}
+	lv.updateContent()
 }
 
-// PageDown scrolls down one page.
+// PageDown moves selection down by one page.
 func (lv *LogView) PageDown() {
-	lv.viewport.ViewDown()
-	if lv.viewport.AtBottom() {
+	pageSize := lv.viewport.Height
+	lv.selectedIndex += pageSize
+	if lv.selectedIndex >= lv.filteredCount {
+		lv.selectedIndex = lv.filteredCount - 1
+	}
+	if lv.selectedIndex == lv.filteredCount-1 {
 		lv.autoScroll = true
 	}
+	lv.updateContent()
 }
 
-// GotoTop scrolls to the top.
+// GotoTop moves selection to the first entry.
 func (lv *LogView) GotoTop() {
 	lv.autoScroll = false
-	lv.viewport.GotoTop()
+	lv.selectedIndex = 0
+	lv.updateContent()
 }
 
-// GotoBottom scrolls to the bottom and enables auto-scroll.
+// GotoBottom moves selection to the last entry and enables auto-scroll.
 func (lv *LogView) GotoBottom() {
-	lv.viewport.GotoBottom()
+	if lv.filteredCount > 0 {
+		lv.selectedIndex = lv.filteredCount - 1
+	}
 	lv.autoScroll = true
+	lv.updateContent()
 }
 
 // ToggleAutoScroll toggles auto-scroll mode.
 func (lv *LogView) ToggleAutoScroll() {
 	lv.autoScroll = !lv.autoScroll
-	if lv.autoScroll {
-		lv.viewport.GotoBottom()
+	if lv.autoScroll && lv.filteredCount > 0 {
+		lv.selectedIndex = lv.filteredCount - 1
+		lv.updateContent()
 	}
+}
+
+// GetSelectedEntry returns the currently selected log entry, or nil if none.
+func (lv *LogView) GetSelectedEntry() *ingest.LogEntry {
+	if lv.filteredCount == 0 || lv.selectedIndex < 0 || lv.selectedIndex >= lv.filteredCount {
+		return nil
+	}
+	return &lv.filteredEntries[lv.selectedIndex]
+}
+
+// renderScrollbar renders a vertical scrollbar.
+func (lv *LogView) renderScrollbar() string {
+	if lv.filteredCount == 0 {
+		return ""
+	}
+
+	height := lv.viewport.Height
+	if height <= 0 {
+		return ""
+	}
+
+	// Calculate thumb size and position
+	thumbSize := height
+	if lv.filteredCount > height {
+		thumbSize = max(1, height*height/lv.filteredCount)
+	}
+
+	thumbPos := 0
+	if lv.filteredCount > height {
+		thumbPos = (lv.selectedIndex * (height - thumbSize)) / (lv.filteredCount - 1)
+	}
+
+	var scrollbar strings.Builder
+	trackStyle := lipgloss.NewStyle().Foreground(ColorBorder)
+	thumbStyle := lipgloss.NewStyle().Foreground(ColorPrimary)
+
+	for i := 0; i < height; i++ {
+		if i >= thumbPos && i < thumbPos+thumbSize {
+			scrollbar.WriteString(thumbStyle.Render(ScrollbarThumb))
+		} else {
+			scrollbar.WriteString(trackStyle.Render(ScrollbarTrack))
+		}
+		if i < height-1 {
+			scrollbar.WriteString("\n")
+		}
+	}
+
+	return " " + scrollbar.String()
 }
 
 // EntryCount returns the number of visible entries.
