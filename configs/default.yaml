@@ -23,10 +23,10 @@ sources:
     # priority: 4  # warning and above
     
   # Authentication log - SSH, sudo, login attempts
-  - name: "Auth Log"
-    type: file
-    path: "/var/log/auth.log"
-    enabled: true
+  #- name: "Auth Log"
+  #  type: file
+  #  path: "/var/log/auth.log"
+  #  enabled: true
     
   # Alternative auth log location (Arch Linux uses journal primarily)
   # - name: "Secure Log"

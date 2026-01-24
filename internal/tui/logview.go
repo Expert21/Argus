@@ -235,10 +235,7 @@ func (lv *LogView) View() string {
 			Italic(true).
 			Render(fmt.Sprintf("\n  No entries from source: %s\n\n  Select 'All Sources' or wait for new events.\n", lv.sourceFilter))
 	} else {
-		// Combine viewport with scrollbar
-		viewportContent := lv.viewport.View()
-		scrollbar := lv.renderScrollbar()
-		content = lipgloss.JoinHorizontal(lipgloss.Top, viewportContent, scrollbar)
+		content = lv.viewport.View()
 	}
 
 	// Combine header and content
